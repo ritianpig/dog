@@ -1,12 +1,16 @@
-from flask import Flask, request, jsonify
+import os
+import json
+import random
+from collections import Counter
+
+from flask import Flask, request, jsonify, render_template
 from flask_admin import Admin, BaseView, expose
 from flask_admin.contrib.fileadmin import FileAdmin
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin.contrib.sqla import ModelView
-import os
-import json
-import random
+import jieba
+
 
 app = Flask(__name__)
 db = SQLAlchemy()
@@ -171,7 +175,7 @@ admin = Admin(name='Admin', endpoint='admin', template_mode='bootstrap3')
 
 
 file_path = os.path.join(os.path.dirname(__file__), 'static')
-# admin.add_view(Upload(name='up', endpoint='upload'))
+admin.add_view(Upload(name='up', endpoint='upload'))
 # admin.add_view(Userview(Sdk,db.session,name='sdk_f'))
 admin.add_view(FileAdmin(file_path, '/static/', name='upload'))
 admin.add_view(Article_view(Article, db.session, name='article'))
@@ -188,6 +192,14 @@ db.create_all(app=app)
 admin.init_app(app)
 app.secret_key = 'qw123098'
 app.config['JSON_AS_ASCII'] = False
+
+
+@app.route('/up', methods=['GET', 'POST'])
+def upload_file():
+    if request.method == 'POST':
+        for f in request.files.getlist('file'):
+            f.save(os.path.join(app.config['UPLOADED_PATH'], f.filename))
+    return render_template('index.html')
 
 
 # 返回文章数据(已测试)
@@ -251,8 +263,7 @@ def dog():
                 'class_id': get_data.class_id,
                 'column_id': get_data.column_id,
                 'content': get_data.content,
-                'main_events': get_data.main_events,
-                'countcollect': get_data.countcollect,
+                'main_events': get_data.main_events,                'countcollect': get_data.countcollect,
                 'countlike': get_data.countlike,
                 'create_date': str(get_data.create_date),
                 'create_idate': int(str(get_data.create_date.date()
@@ -315,46 +326,75 @@ def expert():
 
 @app.route('/search1', methods=["GET", "POST"])
 def search1():
+
+    """
+    搜索功能实现，借助jieba库实现字符串分词，将分词进行数据库文章名匹配
+    同时搜索方法实现了，关键词完整匹配，关键词按数据库出现的数量由小到大排列
+    同时给前段返回精确的匹配关键词key
+    """
+
     if request.method == "GET":
-        get_str = request.args.get('str')
-        get_page = request.args.get('page')
-        res_datas = db.session.query(Article).filter(
-            Article.article_name != '').all()
-        search1_list = []
-        for data in res_datas:
-            if get_str in data.article_name:
-                search1_list.append(data)
+        get_str = request.args.get("str")
+        get_page = request.args.get("page")
+        seg_list = jieba.lcut_for_search(get_str)
+        all_datas = db.session.query(Article).all()
 
-        search1_tuple = tuple(search1_list)
+        object_list = []
+        part_list = []
+        for data1 in all_datas:
+            if get_str in data1.article_name:
+                object_list.append((get_str, data1))
+            else:
+                pass
+
+        object_data_list = [data[1] for data in object_list]
+        for data2 in all_datas:
+            for searchStr in seg_list:
+                part_data_list = [data1[1] for data1 in part_list]
+                if searchStr in data2.article_name and data2 not in \
+                        object_data_list and data2 not in part_data_list:
+                    part_list.append((searchStr, data2))
+                else:
+                    pass
+        # object_list += sorted(part_list)
+        list_key = [key[0] for key in part_list]
+        list_key_sort = sorted(Counter(list_key))
+
+        part_finish_list = []
+        for key in list_key_sort:
+            for tuple_part in part_list:
+                if tuple_part[0] == key:
+                    part_finish_list.append(tuple_part)
+                else:
+                    pass
+
+        object_list += part_finish_list
         index1 = int(get_page)*6
-        index2 = (int(get_page)+1)*6
-        article_list = []
-        object_list = list(search1_tuple[index1:index2])
-        for i in object_list:
-            try:
-                picture_url = sorted(json.loads(i.url))[0]
-            except:
-                picture_url = ""
-            res__article_object = {
-                "article_id": i.article_id,
-                "article_name": i.article_name,
-                "content": i.content,
-                "pictures_url": "https://xcx.51babyapp.com/dog/static/" +
-                                picture_url,
-                "liulancount": i.countcollect,
-                "shoucangcount": i.countlike,
-                "create_date": str(i.create_date),
-                "lanmu": i.column_name
-            }
-            article_list.append(res__article_object)
+        index2 = (int(get_page) + 1)*6
+        articleList = []
 
-        search1_result = {
-            "articlelist": article_list
-        }
-        return jsonify(search1_result)
+        if object_list:
+            for i in object_list[index1:index2]:
+                picture_url = sorted(json.loads(i[1].url))[0]
+                result = {
+                    "article_id": i[1].article_id,
+                    "article_name": i[1].article_name,
+                    "content": i[1].content,
+                    "pictures_url": "https://xcx.51babyapp.com/dog/static/" +
+                                    picture_url,
+                    "liulancount": i[1].countcollect,
+                    "shoucangcount": i[1].countlike,
+                    "create_date": str(i[1].create_date),
+                    "lanmu": i[1].column_name,
+                    "key": i[0]
+                }
+                articleList.append(result)
+        else:
+            pass
 
-    else:
-        return '不支持POST请求'
+        results = {"articlelist": articleList}
+
+        return jsonify(results)
 
 
 # 首页
@@ -571,11 +611,9 @@ def history():
                 article_id_list.append(i.article_id)
             history_list = []
             for k in article_id_list:
-                print(k, type(k))
 
                 res_article = db.session.query(Article).filter_by(article_id=k)\
                     .first()
-                print(res_article)
                 try:
                     picture_url = sorted(json.loads(res_article.url))[0]
 
@@ -675,14 +713,19 @@ def userdata():
 
 @app.route('/picture', methods=["GET", "POST"])
 def picture():
+
+    """
+    图片自动添加脚本路由，aid 理论应为数据库中没有url数据的起始id,
+    由于录入的数据没有录入图片的具体网址，该路由完成的功能是，将本地
+    图片名称，以json格式追加到数据库对应的url中，(不用手动录入图片
+    地址，也千万不要录入，)否则会出现图片无法识别的情况
+    """
+
     if request.method == "GET":
         get_data_id = request.args.get("aid")
         path_dir = os.listdir(os.path.join(os.path.dirname(__file__), 'static'))
         res_articles = db.session.query(Article).\
             filter(Article.id > get_data_id).all()
-        # article_ids = []
-        # for article in res_articles:
-        #     article_ids.append(article.article_id)
 
         for article in res_articles:
             urls = []
@@ -702,6 +745,12 @@ def picture():
 
 @app.route('/ad1', methods=["GET", "POST"])
 def ad1():
+
+    """
+    信息流1路由，本路由下自定义信息流的图
+    片路径和文本信息，有多少条信息返回多少条信息
+    """
+
     if request.method == "GET":
         res_ad1 = db.session.query(Ad1).all()
 
@@ -724,6 +773,12 @@ def ad1():
 
 @app.route('/ad2', methods=["GET", "POST"])
 def ad2():
+
+    """
+    信息流数据2，当录入多条信息流数据时，要保证最后录入的一条信息是完全的
+    ，这样就可以保证以数组形式提供数据，否则的话，会造成异常数据
+    """
+
     if request.method == "GET":
         res_ad2 = db.session.query(Ad2).all()
         urls = []
@@ -741,14 +796,6 @@ def ad2():
 
     else:
         return '不支持POST请求'
-
-
-# @app.route('/upload', methods=['GET', 'POST'])
-# def upload_file():
-#     if request.method == 'POST':
-#         for f in request.files.getlist('file'):
-#             f.save(os.path.join(app.config['UPLOADED_PATH'], f.filename))
-#     return render_template('index.html')
 
 
 # 推荐栏目待定
@@ -924,7 +971,6 @@ def bike():
         get_page = request.args.get('page')
         get_datas = db.session.query(Article).order_by(Article.id.desc())\
             .filter_by(class_name=get_key).all()
-        print(get_key)
         if get_datas:
             article_list = []
             for article in get_datas:
@@ -983,7 +1029,6 @@ def question():
         dict_data = json.loads(get_data)
         len_data = len(dict_data)
         for n in range(1, len_data):
-            print(n)
             add_question = User_question(user_id=dict_data['user_id'],
                                          questions=dict_data['str%s'%(n)])
             db.session.add(add_question)
@@ -997,6 +1042,12 @@ def question():
 # 文章打标签
 @app.route('/mark', methods=["GET", "POST"])
 def mark():
+
+    """
+    对文章分类信息进行检索匹配，对于包含自定义字符串的文章，
+    加入标签标记，本路由将完成，一级标签和三级标签的匹配
+    """
+
     if request.method == "GET":
         test_data = db.session.query(Article).all()
         get_datas = db.session.query(Article).filter_by(class_name='[]').all()
@@ -1026,6 +1077,11 @@ def mark():
 
 @app.route('/bigclass', methods=["GET", "POST"])
 def bigclass():
+
+    """
+    对于加入一级标签和三级标签的数据，本路由将完成加二级标签的功能
+    """
+
     if request.method == "GET":
         get_datas = db.session.query(Article).filter(
             Article.class_name != '[]').all()
