@@ -1,6 +1,8 @@
 import os
 import json
+import pickle
 import random
+import time
 from collections import Counter
 
 from flask import Flask, request, jsonify, render_template
@@ -59,6 +61,8 @@ class Expert(db.Model):
     content = db.Column(db.String(500))
     headrUrl = db.Column(db.String(255))
     consultNum = db.Column(db.String(20))
+    class_name = db.Column(db.String(20))
+
 
 class Show1(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -79,6 +83,8 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(200))
     user_name = db.Column(db.String(100))
+    user_headImg = db.Column(db.String(200))
+    user_sign = db.Column(db.String(200))
 
 
 class User_dg(db.Model):
@@ -124,8 +130,38 @@ class Ad2(db.Model):
     remark = db.Column(db.String(200))
 
 
+class Recommend(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    keys = db.Column(db.String(500))
+
+
+class Question(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(200), comment="提问用户id")
+    user_name = db.Column(db.String(50), comment="提问用户名")
+    isAnonymous = db.Column(db.String(10), comment="是否匿名")
+    user_headImg = db.Column(db.String(200), comment="提问用户头像地址")
+    question_id = db.Column(db.String(200), comment="问题id")
+    question_name = db.Column(db.String(200), comment="问题标题")
+    question_content = db.Column(db.String(500), comment="问题描述")
+    question_pictures = db.Column(db.String(500), comment="问题上传图片地址")
+    collect_count = db.Column(db.Integer, comment="问题浏览量")
+
+
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(200), comment="评论人id")
+    question_id = db.Column(db.String(200), comment="问题id")
+    user_name = db.Column(db.String(50), comment="评论人名")
+    isAnonymous = db.Column(db.String(10), comment="是否匿名")
+    comment_content = db.Column(db.String(500), comment="评论内容")
+    up_count = db.Column(db.Integer, comment="点赞数")
+    user_headImag = db.Column(db.String(200), comment="评论人头像地址")
+    comment_pictures = db.Column(db.String(500), comment="评论人上传图片地址")
+
+
 class Article_view(ModelView):
-    form_columns = ('article_id', 'article_name', 'content','main_events',
+    form_columns = ('article_id', 'article_name', 'content', 'main_events',
                     'create_date', 'countcollect', 'countlike', 'column_name',
                     'bigclass_name', 'class_name', 'way')
     column_list = ('article_id', 'article_name', 'content', 'main_events',
@@ -161,7 +197,8 @@ class Zj(ModelView):
         like=u'专家简介',
         content='专家介绍',
         headrUrl=u'专家头像地址',
-        consultNum=u'咨询量'
+        consultNum=u'咨询量',
+        class_name=u'专家标签'
     )
 
 
@@ -185,6 +222,7 @@ admin.add_view(ModelView(Show6, db.session, name='首页6推荐位'))
 admin.add_view(ModelView(Ad1, db.session, name='信息流1'))
 admin.add_view(ModelView(Ad2, db.session, name='信息流2'))
 admin.add_view(Zj(Expert, db.session, name='专家页'))
+admin.add_view(ModelView(Recommend, db.session, name='推荐词'))
 
 app.config.from_object('config')
 db.init_app(app)
@@ -208,8 +246,8 @@ def dog():
     if request.method == "GET":
         get_id = request.args.get('article_id')
         get_user_id = request.args.get('user_id')
-        get_data = db.session.query(Article).filter_by(article_id=
-                                                       get_id).first()
+        get_data = db.session.query(Article).filter_by(
+            article_id=get_id).first()
         get_user_like = db.session.query(UserLike).\
             filter_by(user_id=get_user_id, article_id=get_id).first()
 
@@ -263,7 +301,8 @@ def dog():
                 'class_id': get_data.class_id,
                 'column_id': get_data.column_id,
                 'content': get_data.content,
-                'main_events': get_data.main_events,                'countcollect': get_data.countcollect,
+                'main_events': get_data.main_events,
+                'countcollect': get_data.countcollect,
                 'countlike': get_data.countlike,
                 'create_date': str(get_data.create_date),
                 'create_idate': int(str(get_data.create_date.date()
@@ -297,7 +336,7 @@ def wb():
         return '不支持post请求'
 
 
-@app.route('/expert', methods=["GET","POST"])
+@app.route('/expert', methods=["GET", "POST"])
 def expert():
     if request.method == "GET":
         get_data = db.session.query(Expert).all()
@@ -310,7 +349,8 @@ def expert():
                     "introduce": data.like,
                     "more": data.content,
                     "headerUrl": data.headrUrl,
-                    "consultNum": data.consultNum
+                    "consultNum": data.consultNum,
+                    "class_name": data.class_name
                 }
                 expertlist.append(result)
 
@@ -375,7 +415,10 @@ def search1():
 
         if object_list:
             for i in object_list[index1:index2]:
-                picture_url = sorted(json.loads(i[1].url))[0]
+                try:
+                    picture_url = sorted(json.loads(i[1].url))[0]
+                except:
+                    picture_url = ''
                 result = {
                     "article_id": i[1].article_id,
                     "article_name": i[1].article_name,
@@ -798,14 +841,17 @@ def ad2():
         return '不支持POST请求'
 
 
-# 推荐栏目待定
-# @app.route('/recommend', methods=["GET", "POST"])
-# def recommend():
-#     if request.method == "GET":
-#         res_datas = db.session.query(Article).all()
-#         data_count = len(res_datas)
-#
-#         recommend_datas = db.session.query(Article).
+# 推荐栏目
+@app.route('/recommend', methods=["GET", "POST"])
+def recommend():
+    if request.method == "GET":
+        res_data = db.session.query(Recommend).first()
+
+        if res_data:
+            keys = res_data.keys.split(',')
+
+        result = {"keys": keys}
+        return jsonify(result)
 
 
 # 头条栏目待定
@@ -1114,6 +1160,284 @@ def bigclass():
                 db.session.commit()
 
         return 'ok'
+
+
+@app.route('/del', methods=["GET", "POST"])
+def delkey():
+    res_data = db.session.query(Article).all()
+
+    for data in res_data:
+        if 'douchai144' in data.content:
+            data.content = data.content.replace('douchai144', 'XQ113143')
+            db.session.commit()
+            print(data.article_id)
+        else:
+            pass
+    return 'ok'
+
+
+@app.route('/cat', methods=["GET", "POST"])
+def cat():
+    res_data = db.session.query(Article).filter(Article.article_id > 10121).all()
+    for i in res_data:
+        if '\t' in i.content:
+            i.content = i.content.replace('\t', '\r\t')
+            db.session.commit()
+        else:
+            pass
+    return "ok"
+
+
+@app.route('/find', methods=["GET", "POST"])
+def find():
+    res_datas = db.session.query(Article).all()
+    for i in res_datas:
+        if 'img' not in i.content:
+            print(i.article_id)
+
+    return "ok"
+
+
+@app.route('/ask', methods=["GET", "POST"])
+def ask():
+
+    """
+    提问模块，用户输入问题，和问题描述以及图片,问题和问题描述不可以为空值，图片可以不添加
+    将用户信息全部存入数据库question,包括用户名，用户id,用户头像地址，问题和问题描述
+    """
+
+    if request.method == "POST":
+        get_data = request.get_data()
+
+        get_name = request.headers.get("picname")
+        get_id = request.headers.get("questionid")
+
+        if get_name:
+            path = os.path.dirname(os.path.abspath(__file__))
+            pic_name = path + "/static/question/" + get_name
+            with open(pic_name, "wb") as f:
+                f.write(get_data)
+
+            res_data = db.session.query(Question).filter_by(
+                question_id=get_id).first()
+            pictures = json.loads(res_data.question_pictures)
+            pictures.append(get_name)
+            res_data.question_pictures = json.dumps(pictures)
+            db.session.commit()
+
+        else:
+            path_time = str(time.time()).replace('.', '')
+            data_dic = json.loads(get_data)
+            question_id = path_time
+            try:
+                user_headimg = data_dic["user_headImg"]
+            except:
+                user_headimg = db.session.query(User).\
+                    filter_by(user_id=data_dic["user_id"]).first().user_headImg
+
+            add_questions = Question(user_id=data_dic["user_id"],
+                                     user_name=data_dic["user_name"],
+                                     user_headImg=user_headimg,
+                                     question_id=question_id,
+                                     question_name=data_dic["question_name"],
+                                     question_content=data_dic["question_content"],
+                                     question_pictures=json.dumps([]),
+                                     isAnonymous=data_dic["isAnonymous"]
+                                     )
+            db.session.add(add_questions)
+            db.session.commit()
+            return question_id
+
+        return "ok"
+    else:
+        return "不支持GET请求"
+
+
+@app.route('/comment', methods=["GET", "POST"])
+def comment():
+
+    """
+    用户评论信息，用户输入评论的问题id,用户名，用户id,评论内容，评论图片可添加也可不添加,储存
+    用户的评论信息
+    """
+
+    if request.method == "POST":
+        get_data = request.get_data()
+        get_picname = request.headers.get("picname")
+        get_qid = request.headers.get("questionid")
+        get_uid = request.headers.get("userid")
+
+        if get_picname:
+            res_data = db.session.query(Comment).filter_by(
+                question_id=get_qid, user_id=get_uid).first()
+            pictures = json.loads(res_data.comment_pictures)
+            pictures.append(get_picname)
+            path = os.path.dirname(os.path.abspath(__file__))
+            name = path + '/static/comment/' + get_picname
+            with open(name, "wb") as f:
+                f.write(get_data)
+            res_data.comment_pictures = json.dumps(pictures)
+            db.session.commit()
+
+        else:
+            data_dic = json.loads(get_data)
+            try:
+                user_headImg = data_dic["user_headImg"]
+            except:
+                user_headImg = db.session.query(User).\
+                    filter_by(user_id=data_dic["user_id"]).first().user_headImg
+
+            add_comment = Comment(user_id=data_dic["user_id"],
+                                  user_name=data_dic["user_name"],
+                                  question_id=data_dic["question_id"],
+                                  user_headImag=user_headImg,
+                                  comment_content=data_dic["comment_content"],
+                                  comment_pictures=json.dumps([]),
+                                  isAnonymous=data_dic["isAnonymous"]
+                                  )
+            db.session.add(add_comment)
+            db.session.commit()
+        return "ok"
+    else:
+        return "不支持GET请求"
+
+
+@app.route('/userComment', methods=["GET", "POST"])
+def detailask():
+
+    """
+    输入qid用户问题id,和page分页，实现用户问题和用户评论信息同时加载，同时评论信息支持分页
+    """
+    if request.method == "GET":
+        get_id = request.args.get("questionid")
+        get_page = request.args.get("page")
+
+        res_data = db.session.query(Question).\
+            filter_by(question_id=get_id).first()
+        try:
+            res_data.collect_count += 1
+        except:
+            res_data.collect_count = 1
+        db.session.commit()
+
+        res_comments = db.session.query(Comment).\
+            filter_by(question_id=get_id).all()
+
+        first_dic = {
+            "user_name": res_data.user_name,
+            "user_headImg": res_data.user_headImg,
+            "question_name": res_data.question_name,
+            "question_content": res_data.question_content,
+            "question_pictures": ["https://xcx.51babyapp.com/dog/"
+                                  "static/question/" + k for k in
+                                  sorted(json.loads(res_data.
+                                                    question_pictures))],
+            "answer_count": str(len(res_comments))
+        }
+        comment_list = []
+
+        for data in res_comments:
+            second_dic = {
+                "user_name": data.user_name,
+                "user_headImg": data.user_headImag,
+                "comment": data.comment_content,
+                "isAnonymous": data.isAnonymous,
+                "up_count": str(data.up_count),
+                "comment_pictures": [
+                    "https://xcx.51babyapp.com/dog/static/comment/"
+                    + k for k in sorted(json.loads(
+                        data.comment_pictures))]
+            }
+            comment_list.append(second_dic)
+
+        result = {
+            "question": first_dic,
+            "comments": comment_list
+                  }
+
+        return jsonify(result)
+    else:
+        return "不支持POST请求"
+
+
+@app.route("/getAsk", methods=["GET", "POST"])
+def getask():
+    if request.method == "GET":
+        get_page = request.args.get("page")
+        res_datas = db.session.query(Question).order_by(Question.id.desc()).all()
+
+        index1 = int(get_page) * 6
+        index2 = (int(get_page) + 1) * 6
+
+        question_list = []
+        for data in res_datas[index1:index2]:
+            question_id = data.question_id
+            res_comment = db.session.query(Comment).\
+                filter_by(question_id=question_id).first()
+
+            try:
+                pic_url = sorted(json.loads(data.question_pictures))[0]
+            except:
+                pic_url = ''
+
+            question_dic = {
+                "user_name": data.user_name,
+                "user_headImg": data.user_headImg,
+                "isAnonymous": data.isAnonymous,
+                "question_name": data.question_name,
+                "collectCount": data.collect_count,
+                "upCount": res_comment.up_count,
+                "pic_url": "https://xcx.51babyapp.com/dog/static/question/"
+                           + pic_url
+            }
+            question_list.append(question_dic)
+        result = {"asklist": question_list}
+
+        return jsonify(result)
+    else:
+        return "不支持POST请求"
+
+
+@app.route('/addup', methods=["GET", "POST"])
+def addup():
+    if request.method == "GET":
+        get_id = request.args.get("questionid")
+        get_uid = request.args.get("userid")
+        res_comment = db.session.query(Comment).filter_by(question_id=get_id,
+                                                          user_id=get_uid).first()
+        try:
+            res_comment.up_count += 1
+        except:
+            res_comment.up_count = 1
+        db.session.commit()
+
+        return "ok"
+
+
+@app.route('/editUser', methods=["GET", "POST"])
+def edit():
+    if request.method == "POST":
+        get_data = request.get_data()
+        get_picname = request.headers.get("picname")
+
+        if get_picname:
+
+            path = os.path.dirname(os.path.abspath(__file__))
+            name = path + "/static/head/" + get_picname
+            with open(name, "wb") as f:
+                f.write(get_data)
+        else:
+            data_dic = json.loads(get_data)
+            get_uid = data_dic["user_id"]
+            res_data = db.session.query(User).filter_by(user_id=get_uid).first()
+            res_data.user_name = data_dic["user_name"]
+            res_data.user_headImg = "https://xcx.51babyapp.com/dog/static/head/"\
+                                    + data_dic["picname"]
+            res_data.sign = data_dic["sign"]
+            db.session.commit()
+        return "ok"
+    else:
+        return "不支持GET请求"
 
 
 if __name__ == '__main__':
