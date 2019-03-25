@@ -1,6 +1,5 @@
 import os
 import json
-import pickle
 import random
 import time
 from collections import Counter
@@ -150,6 +149,7 @@ class Question(db.Model):
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    comment_id = db.Column(db.String(200), comment="评论id")
     user_id = db.Column(db.String(200), comment="评论人id")
     question_id = db.Column(db.String(200), comment="问题id")
     user_name = db.Column(db.String(50), comment="评论人名")
@@ -158,6 +158,13 @@ class Comment(db.Model):
     up_count = db.Column(db.Integer, comment="点赞数")
     user_headImag = db.Column(db.String(200), comment="评论人头像地址")
     comment_pictures = db.Column(db.String(500), comment="评论人上传图片地址")
+
+
+class UserUp(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    comment_id = db.Column(db.String(200), comment="评论id")
+    user_id = db.Column(db.String(200), comment="用户id")
+    up_count = db.Column(db.Integer, comment="评论点赞数")
 
 
 class Article_view(ModelView):
@@ -186,9 +193,9 @@ class Article_view(ModelView):
     create_modal = True
     edit_modal = True
     can_export = True
-    column_formatters = dict(content=lambda v, c, m, p: m.content[0:50]+'***',
+    column_formatters = dict(content=lambda v, c, m, p: m.content[0:50] + '***',
                              main_events=lambda v, c, m, p:
-                             m.main_events[:20]+'***')
+                             m.main_events[:20] + '***')
 
 
 class Zj(ModelView):
@@ -203,6 +210,7 @@ class Zj(ModelView):
 
 
 class Upload(BaseView):
+
     @expose('/')
     def upload(self):
         return self.render('index.html')
@@ -252,6 +260,11 @@ def dog():
             filter_by(user_id=get_user_id, article_id=get_id).first()
 
         if get_user_id != "null":
+            res_history = db.session.query(UserHistory).\
+                filter_by(user_id=get_user_id, article_id=get_id).first()
+            if res_history:
+                db.session.delete(res_history)
+                db.session.commit()
             add_user_history = UserHistory(user_id=get_user_id,
                                            article_id=get_id)
             db.session.add(add_user_history)
@@ -259,8 +272,8 @@ def dog():
         else:
             pass
 
-        add_countcollect = db.session.query(Article).filter_by\
-            (article_id=get_id).first()
+        add_countcollect = db.session.query(Article)\
+            .filter_by(article_id=get_id).first()
         if add_countcollect.countcollect:
             add_countcollect.countcollect += 1
         else:
@@ -366,7 +379,6 @@ def expert():
 
 @app.route('/search1', methods=["GET", "POST"])
 def search1():
-
     """
     搜索功能实现，借助jieba库实现字符串分词，将分词进行数据库文章名匹配
     同时搜索方法实现了，关键词完整匹配，关键词按数据库出现的数量由小到大排列
@@ -409,8 +421,8 @@ def search1():
                     pass
 
         object_list += part_finish_list
-        index1 = int(get_page)*6
-        index2 = (int(get_page) + 1)*6
+        index1 = int(get_page) * 6
+        index2 = (int(get_page) + 1) * 6
         articleList = []
 
         if object_list:
@@ -591,6 +603,27 @@ def show4():
         return '不支持POST请求'
 
 
+@app.route('/SaveUser', methods=["GET", "POST"])
+def saveuser():
+    if request.method == "POST":
+        get_data = request.get_data()
+        data_dic = json.loads(get_data)
+        user_id = data_dic["user_id"]
+        res_data = db.session.query(User).filter_by(user_id=user_id).first()
+        if res_data:
+            pass
+        else:
+            add_data = User(user_id=user_id, user_name=data_dic["user_name"],
+                            user_headImg=data_dic["user_headImg"],
+                            user_sign=data_dic["user_sign"])
+            db.session.add(add_data)
+            db.session.commit()
+
+        return "ok"
+    else:
+        return "不支持GET请求"
+
+
 # 用户收藏(已测试)
 @app.route('/like', methods=["GET", "POST"])
 def like():
@@ -598,7 +631,7 @@ def like():
         get_user_id = request.args.get('user_id')
         get_article_id = request.args.get('article_id')
         res_data = db.session.query(UserLike).filter_by(
-            user_id=get_user_id,article_id=get_article_id).first()
+            user_id=get_user_id, article_id=get_article_id).first()
         if res_data:
             return '该文章已经被收藏了!!!'
         else:
@@ -741,8 +774,8 @@ def userdata():
         res_like = db.session.query(UserLike).filter_by(
             user_id=get_user_id).all()
 
-        res_history = db.session.query(UserHistory).filter_by\
-            (user_id=get_user_id).all()
+        res_history = db.session.query(UserHistory)\
+            .filter_by(user_id=get_user_id).all()
         result = {
             "likes": str(len(res_like)),
             "histories": str(len(res_history))
@@ -756,7 +789,6 @@ def userdata():
 
 @app.route('/picture', methods=["GET", "POST"])
 def picture():
-
     """
     图片自动添加脚本路由，aid 理论应为数据库中没有url数据的起始id,
     由于录入的数据没有录入图片的具体网址，该路由完成的功能是，将本地
@@ -766,7 +798,8 @@ def picture():
 
     if request.method == "GET":
         get_data_id = request.args.get("aid")
-        path_dir = os.listdir(os.path.join(os.path.dirname(__file__), 'static'))
+        path_dir = os.listdir(os.path.join(
+            os.path.dirname(__file__), 'static'))
         res_articles = db.session.query(Article).\
             filter(Article.id > get_data_id).all()
 
@@ -788,7 +821,6 @@ def picture():
 
 @app.route('/ad1', methods=["GET", "POST"])
 def ad1():
-
     """
     信息流1路由，本路由下自定义信息流的图
     片路径和文本信息，有多少条信息返回多少条信息
@@ -816,7 +848,6 @@ def ad1():
 
 @app.route('/ad2', methods=["GET", "POST"])
 def ad2():
-
     """
     信息流数据2，当录入多条信息流数据时，要保证最后录入的一条信息是完全的
     ，这样就可以保证以数组形式提供数据，否则的话，会造成异常数据
@@ -880,7 +911,7 @@ def health():
                     "article_name": article.article_name,
                     "content": article.content,
                     "pictures_url": "https://xcx.51babyapp.com/dog/static/" +
-                                        picture_url,
+                                    picture_url,
                     "liulancount": article.countcollect,
                     "shoucangcount": article.countlike,
                     "create_date": str(article.create_date),
@@ -917,7 +948,7 @@ def food():
                     "article_name": article.article_name,
                     "content": article.content,
                     "pictures_url": "https://xcx.51babyapp.com/dog/static/" +
-                                        picture_url,
+                                    picture_url,
                     "liulancount": article.countcollect,
                     "shoucangcount": article.countlike,
                     "create_date": str(article.create_date),
@@ -954,7 +985,7 @@ def fitness():
                     "article_name": article.article_name,
                     "content": article.content,
                     "pictures_url": "https://xcx.51babyapp.com/dog/static/" +
-                                        picture_url,
+                                    picture_url,
                     "liulancount": article.countcollect,
                     "shoucangcount": article.countlike,
                     "create_date": str(article.create_date),
@@ -991,7 +1022,7 @@ def beauty():
                     "article_name": article.article_name,
                     "content": article.content,
                     "pictures_url": "https://xcx.51babyapp.com/dog/static/" +
-                                        picture_url,
+                                    picture_url,
                     "liulancount": article.countcollect,
                     "shoucangcount": article.countlike,
                     "create_date": str(article.create_date),
@@ -1010,7 +1041,7 @@ def beauty():
 
 
 # 百科
-@app.route('/bike', methods=["GET","POST"])
+@app.route('/bike', methods=["GET", "POST"])
 def bike():
     if request.method == "GET":
         get_key = request.args.get('key')
@@ -1076,7 +1107,7 @@ def question():
         len_data = len(dict_data)
         for n in range(1, len_data):
             add_question = User_question(user_id=dict_data['user_id'],
-                                         questions=dict_data['str%s'%(n)])
+                                         questions=dict_data['str%s' % (n)])
             db.session.add(add_question)
             db.session.commit()
         return 'ok'
@@ -1088,15 +1119,14 @@ def question():
 # 文章打标签
 @app.route('/mark', methods=["GET", "POST"])
 def mark():
-
     """
     对文章分类信息进行检索匹配，对于包含自定义字符串的文章，
     加入标签标记，本路由将完成，一级标签和三级标签的匹配
     """
 
     if request.method == "GET":
-        test_data = db.session.query(Article).all()
-        get_datas = db.session.query(Article).filter_by(class_name='[]').all()
+        get_datas = db.session.query(Article).\
+            filter(Article.class_name.contains('[]')).all()
         health_list = ['眼珠脱垂', '干眼证', '白内障', '眼膜炎', '眼睑炎', '视神经炎',
                        '角膜炎', '眼虫病', '青光眼', '卡他性口炎', '真菌性口炎',
                        '牙周炎', '咽炎', '咽麻痹', '食管炎', '食惯梗阻', '急性胃卡他',
@@ -1104,10 +1134,16 @@ def mark():
                        '肠胃炎', '体内驱虫', '体外驱虫', '皮肤过敏', '疥癣',
                        '嗜舔性皮肤炎', '皮肤肿瘤', '急性湿性皮炎', '免疫功能絮乱',
                        '细菌', '真菌', '细小', '狗瘟', '翻肠', '骨折']
+        food_list = ['羊奶', '狗粮', '益生菌', '小零食', '驱虫药', '磨牙棒', '营养膏',
+                     '钙片']
+        fitness_list = ['定时作息', '定时入笼', '定时饮食', '定点排便', '乱咬乱斯',
+                        '翻垃圾桶', '乱拾食物', '咬人']
+        beauty_list = ['剪毛', '染毛', '剪耳朵', '清耳朵', '断尾']
 
         for class_name in health_list:
             for data in get_datas:
                 if class_name in data.content:
+                    print(class_name)
                     class_list = json.loads(data.class_name)
                     column_list = json.loads(data.column_name)
                     class_list.append(class_name)
@@ -1115,15 +1151,65 @@ def mark():
                     column_list = list(set(column_list))
                     data.column_name = json.dumps(column_list,
                                                   ensure_ascii=False)
-                    data.class_name = json.dumps(class_list, ensure_ascii=False)
+                    data.class_name = json.dumps(
+                        class_list, ensure_ascii=False)
                     db.session.commit()
+                else:
+                    pass
+
+        for class_name in food_list:
+            for data in get_datas:
+                if class_name in data.content:
+                    class_list = json.loads(data.class_name)
+                    column_list = json.loads(data.column_name)
+                    class_list.append(class_name)
+                    column_list.append('饮食')
+                    column_list = list(set(column_list))
+                    data.column_name = json.dumps(column_list,
+                                                  ensure_ascii=False)
+                    data.class_name = json.dumps(
+                        class_list, ensure_ascii=False)
+                    db.session.commit()
+                else:
+                    pass
+
+        for class_name in fitness_list:
+            for data in get_datas:
+                if class_name in data.content:
+                    class_list = json.loads(data.class_name)
+                    column_list = json.loads(data.column_name)
+                    class_list.append(class_name)
+                    column_list.append('训练')
+                    column_list = list(set(column_list))
+                    data.column_name = json.dumps(column_list,
+                                                  ensure_ascii=False)
+                    data.class_name = json.dumps(
+                        class_list, ensure_ascii=False)
+                    db.session.commit()
+                else:
+                    pass
+
+        for class_name in beauty_list:
+            for data in get_datas:
+                if class_name in data.content:
+                    class_list = json.loads(data.class_name)
+                    column_list = json.loads(data.column_name)
+                    class_list.append(class_name)
+                    column_list.append('美容')
+                    column_list = list(set(column_list))
+                    data.column_name = json.dumps(column_list,
+                                                  ensure_ascii=False)
+                    data.class_name = json.dumps(
+                        class_list, ensure_ascii=False)
+                    db.session.commit()
+                else:
+                    pass
 
         return 'ok'
 
 
 @app.route('/bigclass', methods=["GET", "POST"])
 def bigclass():
-
     """
     对于加入一级标签和三级标签的数据，本路由将完成加二级标签的功能
     """
@@ -1134,14 +1220,23 @@ def bigclass():
         for i in get_datas:
             i.bigclass_name = json.dumps([], ensure_ascii=False)
             db.session.commit()
-        eyes_list = ['眼珠脱垂','干眼证','白内障','眼膜炎','眼睑炎','视神经炎',
-                     '角膜炎','眼虫病','青光眼']
-        neike_list= ['卡他性口炎','真菌性口炎','牙周炎','咽炎','咽麻痹','食管炎',
-                     '食惯梗阻','急性胃卡他','慢新胃卡他','胃扩张','胃出血',
-                     '幽门狭窄','溃疡性口炎','肠胃炎','体内驱虫']
-        pifu_list = ['体外驱虫','皮肤过敏','疥癣','嗜舔性皮肤炎','皮肤肿瘤',
-                     '急性湿性皮炎','免疫功能絮乱','细菌','真菌']
-        others_list = ['细小','狗瘟','翻肠','骨折']
+        eyes_list = ['眼珠脱垂', '干眼证', '白内障', '眼膜炎', '眼睑炎', '视神经炎',
+                     '角膜炎', '眼虫病', '青光眼']
+        neike_list = ['卡他性口炎', '真菌性口炎', '牙周炎', '咽炎', '咽麻痹', '食管炎',
+                      '食惯梗阻', '急性胃卡他', '慢新胃卡他', '胃扩张', '胃出血',
+                      '幽门狭窄', '溃疡性口炎', '肠胃炎', '体内驱虫']
+        pifu_list = ['体外驱虫', '皮肤过敏', '疥癣', '嗜舔性皮肤炎', '皮肤肿瘤',
+                     '急性湿性皮炎', '免疫功能絮乱', '细菌', '真菌']
+        others_list = ['细小', '狗瘟', '翻肠', '骨折']
+
+        daily_list = ['羊奶', '狗粮', '益生菌', '小零食']
+        special_list = ['驱虫药', '磨牙棒', '营养膏', '钙片']
+
+        xgyc_list = ['定时作息', '定时入笼', '定时饮食', '定点排便']
+        mbjz_list = ['乱咬乱斯', '翻垃圾桶', '乱拾食物', '咬人']
+
+        hair_list = ['剪毛', '染毛']
+        operation_list = ['剪耳朵', '清耳朵', '断尾']
 
         for data in get_datas:
             for get_class in json.loads(data.class_name):
@@ -1157,6 +1252,42 @@ def bigclass():
                 lastclass_name = list(set(get_bigclass))
                 data.bigclass_name = json.dumps(lastclass_name,
                                                 ensure_ascii=False)
+                db.session.commit()
+
+        for data1 in get_datas:
+            for get_class in json.loads(data1.class_name):
+                get_bigclass = json.loads(data1.bigclass_name)
+                if get_class in daily_list:
+                    get_bigclass.append('日常')
+                elif get_class in special_list:
+                    get_bigclass.append('特殊')
+                lastclass_name = list(set(get_bigclass))
+                data1.bigclass_name = json.dumps(lastclass_name,
+                                                 ensure_ascii=False)
+                db.session.commit()
+
+        for data2 in get_datas:
+            for get_class in json.loads(data2.class_name):
+                get_bigclass = json.loads(data2.bigclass_name)
+                if get_class in xgyc_list:
+                    get_bigclass.append('习惯养成')
+                elif get_class in mbjz_list:
+                    get_bigclass.append('毛病纠正')
+                lastclass_name = list(set(get_bigclass))
+                data2.bigclass_name = json.dumps(lastclass_name,
+                                                 ensure_ascii=False)
+                db.session.commit()
+
+        for data3 in get_datas:
+            for get_class in json.loads(data3.class_name):
+                get_bigclass = json.loads(data3.bigclass_name)
+                if get_class in hair_list:
+                    get_bigclass.append('毛发')
+                elif get_class in operation_list:
+                    get_bigclass.append('手术')
+                lastclass_name = list(set(get_bigclass))
+                data3.bigclass_name = json.dumps(lastclass_name,
+                                                 ensure_ascii=False)
                 db.session.commit()
 
         return 'ok'
@@ -1178,7 +1309,8 @@ def delkey():
 
 @app.route('/cat', methods=["GET", "POST"])
 def cat():
-    res_data = db.session.query(Article).filter(Article.article_id > 10121).all()
+    res_data = db.session.query(Article).filter(
+        Article.article_id > 10121).all()
     for i in res_data:
         if '\t' in i.content:
             i.content = i.content.replace('\t', '\r\t')
@@ -1200,7 +1332,6 @@ def find():
 
 @app.route('/ask', methods=["GET", "POST"])
 def ask():
-
     """
     提问模块，用户输入问题，和问题描述以及图片,问题和问题描述不可以为空值，图片可以不添加
     将用户信息全部存入数据库question,包括用户名，用户id,用户头像地址，问题和问题描述
@@ -1211,17 +1342,22 @@ def ask():
 
         get_name = request.headers.get("picname")
         get_id = request.headers.get("questionid")
+        res_data = db.session.query(Question).filter_by(
+            question_id=get_id).first()
 
         if get_name:
-            path = os.path.dirname(os.path.abspath(__file__))
-            pic_name = path + "/static/question/" + get_name
+            path = os.path.dirname(os.path.abspath(__file__))\
+                + "/static/question/"
+            pic_name = path + get_name
             with open(pic_name, "wb") as f:
                 f.write(get_data)
+            pathdir = os.listdir(path)
+            pictures = []
+            for i in pathdir:
+                if get_id in i:
+                    pictures.append(i)
 
-            res_data = db.session.query(Question).filter_by(
-                question_id=get_id).first()
-            pictures = json.loads(res_data.question_pictures)
-            pictures.append(get_name)
+            pictures = list(set(pictures))
             res_data.question_pictures = json.dumps(pictures)
             db.session.commit()
 
@@ -1229,19 +1365,17 @@ def ask():
             path_time = str(time.time()).replace('.', '')
             data_dic = json.loads(get_data)
             question_id = path_time
-            try:
-                user_headimg = data_dic["user_headImg"]
-            except:
-                user_headimg = db.session.query(User).\
-                    filter_by(user_id=data_dic["user_id"]).first().user_headImg
-
+            path_head = "https://xcx.51babyapp.com/dog/static/head/"
+            get_pichead = data_dic["user_headImg"]
+            user_headImg = path_head + \
+                get_pichead if get_pichead != "0" else "0"
             add_questions = Question(user_id=data_dic["user_id"],
                                      user_name=data_dic["user_name"],
-                                     user_headImg=user_headimg,
+                                     user_headImg=user_headImg,
                                      question_id=question_id,
                                      question_name=data_dic["question_name"],
-                                     question_content=data_dic["question_content"],
-                                     question_pictures=json.dumps([]),
+                                     question_content=data_dic[
+                                         "question_content"],
                                      isAnonymous=data_dic["isAnonymous"]
                                      )
             db.session.add(add_questions)
@@ -1255,7 +1389,6 @@ def ask():
 
 @app.route('/comment', methods=["GET", "POST"])
 def comment():
-
     """
     用户评论信息，用户输入评论的问题id,用户名，用户id,评论内容，评论图片可添加也可不添加,储存
     用户的评论信息
@@ -1263,36 +1396,39 @@ def comment():
 
     if request.method == "POST":
         get_data = request.get_data()
-        get_picname = request.headers.get("picname")
-        get_qid = request.headers.get("questionid")
-        get_uid = request.headers.get("userid")
+        get_name = request.headers.get("picname")
+        get_pcid = request.headers.get("pcid")
 
-        if get_picname:
-            res_data = db.session.query(Comment).filter_by(
-                question_id=get_qid, user_id=get_uid).first()
-            pictures = json.loads(res_data.comment_pictures)
-            pictures.append(get_picname)
-            path = os.path.dirname(os.path.abspath(__file__))
-            name = path + '/static/comment/' + get_picname
-            with open(name, "wb") as f:
+        res_data = db.session.query(Comment).filter_by(
+            comment_id=get_pcid).first()
+
+        if get_name:
+            path = os.path.dirname(os.path.abspath(__file__)) \
+                + "/static/comment/"
+            pic_name = path + get_name
+            with open(pic_name, "wb") as f:
                 f.write(get_data)
+            pathdir = os.listdir(path)
+            pictures = []
+            for i in pathdir:
+                if get_pcid in i:
+                    pictures.append(i)
+            pictures = list(set(pictures))
             res_data.comment_pictures = json.dumps(pictures)
             db.session.commit()
 
         else:
             data_dic = json.loads(get_data)
-            try:
-                user_headImg = data_dic["user_headImg"]
-            except:
-                user_headImg = db.session.query(User).\
-                    filter_by(user_id=data_dic["user_id"]).first().user_headImg
-
+            path_head = "https://xcx.51babyapp.com/dog/static/head/"
+            get_pichead = data_dic["user_headImg"]
+            user_headImg = path_head + \
+                get_pichead if get_pichead != "0" else "0"
             add_comment = Comment(user_id=data_dic["user_id"],
+                                  comment_id=data_dic["commentid"],
                                   user_name=data_dic["user_name"],
                                   question_id=data_dic["question_id"],
                                   user_headImag=user_headImg,
                                   comment_content=data_dic["comment_content"],
-                                  comment_pictures=json.dumps([]),
                                   isAnonymous=data_dic["isAnonymous"]
                                   )
             db.session.add(add_comment)
@@ -1304,12 +1440,12 @@ def comment():
 
 @app.route('/userComment', methods=["GET", "POST"])
 def detailask():
-
     """
     输入qid用户问题id,和page分页，实现用户问题和用户评论信息同时加载，同时评论信息支持分页
     """
     if request.method == "GET":
         get_id = request.args.get("questionid")
+        get_cid = request.args.get("commentid")
         get_page = request.args.get("page")
 
         res_data = db.session.query(Question).\
@@ -1322,38 +1458,53 @@ def detailask():
 
         res_comments = db.session.query(Comment).\
             filter_by(question_id=get_id).all()
+        res_userup = db.session.query(
+            UserUp).filter_by(comment_id=get_cid).all()
+
+        index1 = int(get_page) * 6
+        index2 = (int(get_page) + 1) * 6
+
+        comments = res_comments[index1:index2]
+
+        try:
+            question_pictures = [
+                "https://xcx.51babyapp.com/dog/static/question/"
+                + k for k in sorted(json.loads(res_data.question_pictures))]
+        except:
+            question_pictures = []
 
         first_dic = {
             "user_name": res_data.user_name,
             "user_headImg": res_data.user_headImg,
             "question_name": res_data.question_name,
             "question_content": res_data.question_content,
-            "question_pictures": ["https://xcx.51babyapp.com/dog/"
-                                  "static/question/" + k for k in
-                                  sorted(json.loads(res_data.
-                                                    question_pictures))],
+            "question_pictures": question_pictures,
             "answer_count": str(len(res_comments))
         }
         comment_list = []
 
-        for data in res_comments:
+        for data in comments:
+            try:
+                comment_pictures = [
+                    "https://xcx.51babyapp.com/dog/static/comment/"
+                    + k for k in sorted(json.loads(data.comment_pictures))]
+            except:
+                comment_pictures = []
+            user_headImg = data.user_headImag if data.user_headImag != "0" else "0"
             second_dic = {
                 "user_name": data.user_name,
-                "user_headImg": data.user_headImag,
+                "user_headImg": user_headImg,
                 "comment": data.comment_content,
                 "isAnonymous": data.isAnonymous,
-                "up_count": str(data.up_count),
-                "comment_pictures": [
-                    "https://xcx.51babyapp.com/dog/static/comment/"
-                    + k for k in sorted(json.loads(
-                        data.comment_pictures))]
+                "up_count": str(len(res_userup)),
+                "comment_pictures": comment_pictures
             }
             comment_list.append(second_dic)
 
         result = {
             "question": first_dic,
             "comments": comment_list
-                  }
+        }
 
         return jsonify(result)
     else:
@@ -1364,7 +1515,8 @@ def detailask():
 def getask():
     if request.method == "GET":
         get_page = request.args.get("page")
-        res_datas = db.session.query(Question).order_by(Question.id.desc()).all()
+        res_datas = db.session.query(
+            Question).order_by(Question.id.desc()).all()
 
         index1 = int(get_page) * 6
         index2 = (int(get_page) + 1) * 6
@@ -1372,21 +1524,24 @@ def getask():
         question_list = []
         for data in res_datas[index1:index2]:
             question_id = data.question_id
-            res_comment = db.session.query(Comment).\
-                filter_by(question_id=question_id).first()
 
+            res_comment = db.session.query(
+                Comment).filter_by(question_id=question_id).all()
             try:
                 pic_url = sorted(json.loads(data.question_pictures))[0]
             except:
                 pic_url = ''
+            user_headImg = data.user_headImg if data.user_headImg != "0" else "0"
 
             question_dic = {
                 "user_name": data.user_name,
-                "user_headImg": data.user_headImg,
+                "question_id": data.question_id,
+                "user_headImg": user_headImg,
                 "isAnonymous": data.isAnonymous,
                 "question_name": data.question_name,
+                "question_content": data.question_content,
                 "collectCount": data.collect_count,
-                "upCount": res_comment.up_count,
+                "answerCount": str(len(res_comment)),
                 "pic_url": "https://xcx.51babyapp.com/dog/static/question/"
                            + pic_url
             }
@@ -1401,16 +1556,16 @@ def getask():
 @app.route('/addup', methods=["GET", "POST"])
 def addup():
     if request.method == "GET":
-        get_id = request.args.get("questionid")
+        get_id = request.args.get("commentid")
         get_uid = request.args.get("userid")
-        res_comment = db.session.query(Comment).filter_by(question_id=get_id,
-                                                          user_id=get_uid).first()
-        try:
-            res_comment.up_count += 1
-        except:
-            res_comment.up_count = 1
-        db.session.commit()
-
+        res_userup = db.session.query(UserUp).filter_by(comment_id=get_id,
+                                                        user_id=get_uid).first()
+        if res_userup:
+            return "nook"
+        else:
+            add_userup = UserUp(comment_id=get_id, user_id=get_uid, up_count=1)
+            db.session.add(add_userup)
+            db.session.commit()
         return "ok"
 
 
@@ -1429,12 +1584,32 @@ def edit():
         else:
             data_dic = json.loads(get_data)
             get_uid = data_dic["user_id"]
-            res_data = db.session.query(User).filter_by(user_id=get_uid).first()
-            res_data.user_name = data_dic["user_name"]
-            res_data.user_headImg = "https://xcx.51babyapp.com/dog/static/head/"\
-                                    + data_dic["picname"]
-            res_data.sign = data_dic["sign"]
-            db.session.commit()
+            res_data = db.session.query(
+                User).filter_by(user_id=get_uid).first()
+            res_questions = db.session.query(Question).\
+                filter_by(user_id=get_uid).all()
+            res_comments = db.session.query(Comment).\
+                filter_by(user_id=get_uid).all()
+            pic_path = "https://xcx.51babyapp.com/dog/static/head/"
+            if res_data:
+                res_data.user_name = data_dic["user_name"]
+                res_data.user_headImg = pic_path + data_dic["picname"]
+                res_data.sign = data_dic["sign"]
+                db.session.commit()
+            else:
+                add_user = User(user_id=data_dic["user_id"],
+                                user_headImg=pic_path + data_dic["picname"],
+                                user_name=data_dic["user_name"],
+                                user_sign=data_dic["sign"])
+                db.session.add(add_user)
+                db.session.commit()
+            for data1 in res_questions:
+                data1.user_headImg = pic_path + data_dic["picname"]
+                db.session.commit()
+            for data2 in res_comments:
+                data2.user_headImag = pic_path + data_dic["picname"]
+                db.session.commit()
+
         return "ok"
     else:
         return "不支持GET请求"
@@ -1442,5 +1617,3 @@ def edit():
 
 if __name__ == '__main__':
     app.run(threaded=True)
-
-
