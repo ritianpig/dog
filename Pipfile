@@ -8,6 +8,8 @@ verify_ssl = true
 [packages]
 flask-migrate = "*"
 pymysql = "*"
+flask-dropzone = "*"
+jieba = "*"
 
 [requires]
 python_version = "3.6"

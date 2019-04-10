@@ -61,6 +61,7 @@ class Expert(db.Model):
     headrUrl = db.Column(db.String(255))
     consultNum = db.Column(db.String(20))
     class_name = db.Column(db.String(20))
+    Wx = db.Column(db.String(100))
 
 
 class Show1(db.Model):
@@ -167,6 +168,20 @@ class UserUp(db.Model):
     up_count = db.Column(db.Integer, comment="评论点赞数")
 
 
+class Switch(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    switch = db.Column(db.String(10))
+
+
+class BottomWx(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    doger = db.Column(db.String(100), comment="训犬师")
+    wx = db.Column(db.String(100), comment="微信号")
+    content = db.Column(db.String(200), comment="内容")
+    column = db.Column(db.String(50), comment="栏目")
+
+
+
 class Article_view(ModelView):
     form_columns = ('article_id', 'article_name', 'content', 'main_events',
                     'create_date', 'countcollect', 'countlike', 'column_name',
@@ -193,9 +208,9 @@ class Article_view(ModelView):
     create_modal = True
     edit_modal = True
     can_export = True
-    column_formatters = dict(content=lambda v, c, m, p: m.content[0:50] + '***',
+    column_formatters = dict(content=lambda v, c, m, p: m.content[0:50]+'***',
                              main_events=lambda v, c, m, p:
-                             m.main_events[:20] + '***')
+                             m.main_events[:20]+'***')
 
 
 class Zj(ModelView):
@@ -205,12 +220,46 @@ class Zj(ModelView):
         content='专家介绍',
         headrUrl=u'专家头像地址',
         consultNum=u'咨询量',
-        class_name=u'专家标签'
+        class_name=u'专家标签',
+        Wx=u'微信号'
     )
 
 
-class Upload(BaseView):
+class Qe(ModelView):
+    column_list = ('id', 'question_id', 'user_name', 'user_headImg',
+                   'question_name', 'question_content', 'count_collect')
+    column_labels = dict(
+        id=u'序号',
+        question_id=u'问题id',
+        user_name=u'用户名',
+        user_headImg=u'头像',
+        question_name=u'问题',
+        question_content=u'问题描述',
+        count_collect=u'收藏数'
+    )
+    column_formatters = dict(question_content=
+                             lambda v, c, m, p: m.question_content[0:10]+'***',
+                             user_headImg=
+                             lambda v, c, m, p: m.user_headImg[0:20]+'***')
 
+
+class Co(ModelView):
+    column_list = ('id', 'user_name', 'user_headImg',
+                   'question_id', 'comment_content')
+    column_labels = dict(
+        id=u'序号',
+        user_name=u'用户名',
+        user_headImag=u'头像',
+        question_id=u'问题id',
+        comment_content=u'评论'
+    )
+    column_formatters = dict(comment_content=
+                             lambda v, c, m, p: m.comment_content[0:10]+'***',
+                             user_headImag=
+                             lambda v, c, m, p: m.user_headImag[0:20]+'***')
+
+
+class Upload(BaseView):
     @expose('/')
     def upload(self):
         return self.render('index.html')
@@ -231,6 +280,10 @@ admin.add_view(ModelView(Ad1, db.session, name='信息流1'))
 admin.add_view(ModelView(Ad2, db.session, name='信息流2'))
 admin.add_view(Zj(Expert, db.session, name='专家页'))
 admin.add_view(ModelView(Recommend, db.session, name='推荐词'))
+admin.add_view(Qe(Question, db.session, name="提问"))
+admin.add_view(Co(Comment, db.session, name="评论"))
+admin.add_view(ModelView(Switch, db.session, name="开关"))
+admin.add_view(ModelView(BottomWx, db.session, name="Bottom"))
 
 app.config.from_object('config')
 db.init_app(app)
@@ -363,7 +416,8 @@ def expert():
                     "more": data.content,
                     "headerUrl": data.headrUrl,
                     "consultNum": data.consultNum,
-                    "class_name": data.class_name
+                    "class_name": data.class_name,
+                    "Wx": data.Wx
                 }
                 expertlist.append(result)
 
@@ -379,6 +433,7 @@ def expert():
 
 @app.route('/search1', methods=["GET", "POST"])
 def search1():
+
     """
     搜索功能实现，借助jieba库实现字符串分词，将分词进行数据库文章名匹配
     同时搜索方法实现了，关键词完整匹配，关键词按数据库出现的数量由小到大排列
@@ -421,8 +476,8 @@ def search1():
                     pass
 
         object_list += part_finish_list
-        index1 = int(get_page) * 6
-        index2 = (int(get_page) + 1) * 6
+        index1 = int(get_page)*6
+        index2 = (int(get_page) + 1)*6
         articleList = []
 
         if object_list:
@@ -631,7 +686,7 @@ def like():
         get_user_id = request.args.get('user_id')
         get_article_id = request.args.get('article_id')
         res_data = db.session.query(UserLike).filter_by(
-            user_id=get_user_id, article_id=get_article_id).first()
+            user_id=get_user_id,article_id=get_article_id).first()
         if res_data:
             return '该文章已经被收藏了!!!'
         else:
@@ -789,6 +844,7 @@ def userdata():
 
 @app.route('/picture', methods=["GET", "POST"])
 def picture():
+
     """
     图片自动添加脚本路由，aid 理论应为数据库中没有url数据的起始id,
     由于录入的数据没有录入图片的具体网址，该路由完成的功能是，将本地
@@ -798,8 +854,7 @@ def picture():
 
     if request.method == "GET":
         get_data_id = request.args.get("aid")
-        path_dir = os.listdir(os.path.join(
-            os.path.dirname(__file__), 'static'))
+        path_dir = os.listdir(os.path.join(os.path.dirname(__file__), 'static'))
         res_articles = db.session.query(Article).\
             filter(Article.id > get_data_id).all()
 
@@ -821,6 +876,7 @@ def picture():
 
 @app.route('/ad1', methods=["GET", "POST"])
 def ad1():
+
     """
     信息流1路由，本路由下自定义信息流的图
     片路径和文本信息，有多少条信息返回多少条信息
@@ -848,6 +904,7 @@ def ad1():
 
 @app.route('/ad2', methods=["GET", "POST"])
 def ad2():
+
     """
     信息流数据2，当录入多条信息流数据时，要保证最后录入的一条信息是完全的
     ，这样就可以保证以数组形式提供数据，否则的话，会造成异常数据
@@ -883,13 +940,6 @@ def recommend():
 
         result = {"keys": keys}
         return jsonify(result)
-
-
-# 头条栏目待定
-# @app.route('/headline', methods=["GET", "POST"])
-# def headline():
-#     if request.method == "GET":
-#         pass
 
 
 # 健康栏目
@@ -1041,7 +1091,7 @@ def beauty():
 
 
 # 百科
-@app.route('/bike', methods=["GET", "POST"])
+@app.route('/bike', methods=["GET","POST"])
 def bike():
     if request.method == "GET":
         get_key = request.args.get('key')
@@ -1107,7 +1157,7 @@ def question():
         len_data = len(dict_data)
         for n in range(1, len_data):
             add_question = User_question(user_id=dict_data['user_id'],
-                                         questions=dict_data['str%s' % (n)])
+                                         questions=dict_data['str%s'%(n)])
             db.session.add(add_question)
             db.session.commit()
         return 'ok'
@@ -1119,6 +1169,7 @@ def question():
 # 文章打标签
 @app.route('/mark', methods=["GET", "POST"])
 def mark():
+
     """
     对文章分类信息进行检索匹配，对于包含自定义字符串的文章，
     加入标签标记，本路由将完成，一级标签和三级标签的匹配
@@ -1151,8 +1202,7 @@ def mark():
                     column_list = list(set(column_list))
                     data.column_name = json.dumps(column_list,
                                                   ensure_ascii=False)
-                    data.class_name = json.dumps(
-                        class_list, ensure_ascii=False)
+                    data.class_name = json.dumps(class_list, ensure_ascii=False)
                     db.session.commit()
                 else:
                     pass
@@ -1167,8 +1217,7 @@ def mark():
                     column_list = list(set(column_list))
                     data.column_name = json.dumps(column_list,
                                                   ensure_ascii=False)
-                    data.class_name = json.dumps(
-                        class_list, ensure_ascii=False)
+                    data.class_name = json.dumps(class_list, ensure_ascii=False)
                     db.session.commit()
                 else:
                     pass
@@ -1183,8 +1232,7 @@ def mark():
                     column_list = list(set(column_list))
                     data.column_name = json.dumps(column_list,
                                                   ensure_ascii=False)
-                    data.class_name = json.dumps(
-                        class_list, ensure_ascii=False)
+                    data.class_name = json.dumps(class_list, ensure_ascii=False)
                     db.session.commit()
                 else:
                     pass
@@ -1199,8 +1247,7 @@ def mark():
                     column_list = list(set(column_list))
                     data.column_name = json.dumps(column_list,
                                                   ensure_ascii=False)
-                    data.class_name = json.dumps(
-                        class_list, ensure_ascii=False)
+                    data.class_name = json.dumps(class_list, ensure_ascii=False)
                     db.session.commit()
                 else:
                     pass
@@ -1210,6 +1257,7 @@ def mark():
 
 @app.route('/bigclass', methods=["GET", "POST"])
 def bigclass():
+
     """
     对于加入一级标签和三级标签的数据，本路由将完成加二级标签的功能
     """
@@ -1309,8 +1357,7 @@ def delkey():
 
 @app.route('/cat', methods=["GET", "POST"])
 def cat():
-    res_data = db.session.query(Article).filter(
-        Article.article_id > 10121).all()
+    res_data = db.session.query(Article).filter(Article.article_id > 10121).all()
     for i in res_data:
         if '\t' in i.content:
             i.content = i.content.replace('\t', '\r\t')
@@ -1332,6 +1379,7 @@ def find():
 
 @app.route('/ask', methods=["GET", "POST"])
 def ask():
+
     """
     提问模块，用户输入问题，和问题描述以及图片,问题和问题描述不可以为空值，图片可以不添加
     将用户信息全部存入数据库question,包括用户名，用户id,用户头像地址，问题和问题描述
@@ -1347,7 +1395,7 @@ def ask():
 
         if get_name:
             path = os.path.dirname(os.path.abspath(__file__))\
-                + "/static/question/"
+                   + "/static/question/"
             pic_name = path + get_name
             with open(pic_name, "wb") as f:
                 f.write(get_data)
@@ -1365,17 +1413,15 @@ def ask():
             path_time = str(time.time()).replace('.', '')
             data_dic = json.loads(get_data)
             question_id = path_time
-            path_head = "https://xcx.51babyapp.com/dog/static/head/"
+            # path_head = "https://xcx.51babyapp.com/dog/static/head/"
             get_pichead = data_dic["user_headImg"]
-            user_headImg = path_head + \
-                get_pichead if get_pichead != "0" else "0"
+            user_headImg = get_pichead if get_pichead != "0" else "0"
             add_questions = Question(user_id=data_dic["user_id"],
                                      user_name=data_dic["user_name"],
                                      user_headImg=user_headImg,
                                      question_id=question_id,
                                      question_name=data_dic["question_name"],
-                                     question_content=data_dic[
-                                         "question_content"],
+                                     question_content=data_dic["question_content"],
                                      isAnonymous=data_dic["isAnonymous"]
                                      )
             db.session.add(add_questions)
@@ -1389,6 +1435,7 @@ def ask():
 
 @app.route('/comment', methods=["GET", "POST"])
 def comment():
+
     """
     用户评论信息，用户输入评论的问题id,用户名，用户id,评论内容，评论图片可添加也可不添加,储存
     用户的评论信息
@@ -1399,12 +1446,11 @@ def comment():
         get_name = request.headers.get("picname")
         get_pcid = request.headers.get("pcid")
 
-        res_data = db.session.query(Comment).filter_by(
-            comment_id=get_pcid).first()
+        res_data = db.session.query(Comment).filter_by(comment_id=get_pcid).first()
 
         if get_name:
             path = os.path.dirname(os.path.abspath(__file__)) \
-                + "/static/comment/"
+                   + "/static/comment/"
             pic_name = path + get_name
             with open(pic_name, "wb") as f:
                 f.write(get_data)
@@ -1419,10 +1465,9 @@ def comment():
 
         else:
             data_dic = json.loads(get_data)
-            path_head = "https://xcx.51babyapp.com/dog/static/head/"
+            # path_head = "https://xcx.51babyapp.com/dog/static/head/"
             get_pichead = data_dic["user_headImg"]
-            user_headImg = path_head + \
-                get_pichead if get_pichead != "0" else "0"
+            user_headImg = get_pichead if get_pichead != "0" else "0"
             add_comment = Comment(user_id=data_dic["user_id"],
                                   comment_id=data_dic["commentid"],
                                   user_name=data_dic["user_name"],
@@ -1440,6 +1485,7 @@ def comment():
 
 @app.route('/userComment', methods=["GET", "POST"])
 def detailask():
+
     """
     输入qid用户问题id,和page分页，实现用户问题和用户评论信息同时加载，同时评论信息支持分页
     """
@@ -1458,8 +1504,6 @@ def detailask():
 
         res_comments = db.session.query(Comment).\
             filter_by(question_id=get_id).all()
-        res_userup = db.session.query(
-            UserUp).filter_by(comment_id=get_cid).all()
 
         index1 = int(get_page) * 6
         index2 = (int(get_page) + 1) * 6
@@ -1484,6 +1528,9 @@ def detailask():
         comment_list = []
 
         for data in comments:
+            commentid = data.comment_id
+            res_userup = db.session.query(UserUp).filter_by(
+                comment_id=commentid).all()
             try:
                 comment_pictures = [
                     "https://xcx.51babyapp.com/dog/static/comment/"
@@ -1497,14 +1544,14 @@ def detailask():
                 "comment": data.comment_content,
                 "isAnonymous": data.isAnonymous,
                 "up_count": str(len(res_userup)),
-                "comment_pictures": comment_pictures
+                "comment_pictures": comment_pictures,
             }
             comment_list.append(second_dic)
 
         result = {
             "question": first_dic,
             "comments": comment_list
-        }
+                  }
 
         return jsonify(result)
     else:
@@ -1515,8 +1562,7 @@ def detailask():
 def getask():
     if request.method == "GET":
         get_page = request.args.get("page")
-        res_datas = db.session.query(
-            Question).order_by(Question.id.desc()).all()
+        res_datas = db.session.query(Question).order_by(Question.id.desc()).all()
 
         index1 = int(get_page) * 6
         index2 = (int(get_page) + 1) * 6
@@ -1584,30 +1630,31 @@ def edit():
         else:
             data_dic = json.loads(get_data)
             get_uid = data_dic["user_id"]
-            res_data = db.session.query(
-                User).filter_by(user_id=get_uid).first()
+            res_data = db.session.query(User).filter_by(user_id=get_uid).first()
             res_questions = db.session.query(Question).\
                 filter_by(user_id=get_uid).all()
             res_comments = db.session.query(Comment).\
                 filter_by(user_id=get_uid).all()
-            pic_path = "https://xcx.51babyapp.com/dog/static/head/"
+            # pic_path = "https://xcx.51babyapp.com/dog/static/head/"
             if res_data:
                 res_data.user_name = data_dic["user_name"]
-                res_data.user_headImg = pic_path + data_dic["picname"]
+                res_data.user_headImg = data_dic["picname"]
                 res_data.sign = data_dic["sign"]
                 db.session.commit()
             else:
                 add_user = User(user_id=data_dic["user_id"],
-                                user_headImg=pic_path + data_dic["picname"],
+                                user_headImg=data_dic["picname"],
                                 user_name=data_dic["user_name"],
                                 user_sign=data_dic["sign"])
                 db.session.add(add_user)
                 db.session.commit()
             for data1 in res_questions:
-                data1.user_headImg = pic_path + data_dic["picname"]
+                data1.user_headImg = data_dic["picname"]
+                data1.user_name = data_dic["user_name"]
                 db.session.commit()
             for data2 in res_comments:
-                data2.user_headImag = pic_path + data_dic["picname"]
+                data2.user_headImag = data_dic["picname"]
+                data2.user_name = data_dic["user_name"]
                 db.session.commit()
 
         return "ok"
@@ -1615,5 +1662,57 @@ def edit():
         return "不支持GET请求"
 
 
+@app.route('/switch', methods=["GET", "POST"])
+def switch():
+    if request.method == "GET":
+        res_switch = db.session.query(Switch).first()
+        if res_switch:
+            result = {"switch": res_switch.switch}
+            return jsonify(result)
+        else:
+            return "no switch"
+    else:
+        return "不支持POST"
+
+
+@app.route('/bottom', methods=["GET", "POST"])
+def bottom():
+    if request.method == "GET":
+        res_bottom = db.session.query(BottomWx).all()
+        if res_bottom:
+            bottom_list = []
+            for data in res_bottom:
+                part_dict = {
+                    "doger": data.doger,
+                    "wx": data.wx,
+                    "content": data.content,
+                    "column": data.column
+                }
+                bottom_list.append(part_dict)
+            result = {"bottom": bottom_list}
+            return jsonify(result)
+        else:
+            return jsonify({})
+
+
+@app.route('/consult', methods=["GET", "POST"])
+def consult():
+    if request.method == "GET":
+        get_name = request.args.get("name")
+        res_expert = db.session.query(Expert).filter_by(expertName=
+                                                        get_name).first()
+        if res_expert:
+            try:
+                res_expert.consultNum = str(int(res_expert.consultNum) + 1)
+            except:
+                res_expert.consultNum = str(1)
+            db.session.commit()
+            return "ok"
+        else:
+            return "专家去火星了"
+
+
 if __name__ == '__main__':
     app.run(threaded=True)
+
+
